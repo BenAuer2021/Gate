@@ -27,8 +27,7 @@ public:
 		double alpha;
 		double beta;
 		double energy;
-
-		double mass;
+		double dose;
 	};
 
 	struct Coefficients {
@@ -82,6 +81,7 @@ public:
 	void SetBioPhysicalModel(G4String s) { _bioPhysicalModel = s; }
 	void SetSOBPWeight(G4double d) { _SOBPWeight = d; }
 
+	void SetEnableEdep(bool e) { _enableEdep = e; }
 	void SetEnableDose(bool e) { _enableDose = e; }
 	void SetEnableBioDose(bool e) { _enableBioDose = e; }
 	void SetEnableAlphaMix(bool e) { _enableAlphaMix = e; }
@@ -119,12 +119,14 @@ private:
 
 	// Images
 	GateImageWithStatistic _bioDoseImage;
+	GateImageWithStatistic _edepImage;
 	GateImageWithStatistic _doseImage;
 	GateImageWithStatistic _alphaMixImage;
 	GateImageWithStatistic _betaMixImage;
 	GateImageWithStatistic _RBEImage;
 
 	// Outputs
+	bool _enableEdep;
 	bool _enableDose;
 	bool _enableBioDose;
 	bool _enableAlphaMix;
