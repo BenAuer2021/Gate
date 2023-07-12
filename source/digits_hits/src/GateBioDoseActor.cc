@@ -148,8 +148,13 @@ void GateBioDoseActor::SaveData() {
 	// Calculate Alpha Beta mix
 	for(auto const& [index, deposited]: _depositedMap) {
 		// Alpha Beta mix (final)
-		double alphamix = (deposited.alpha / deposited.energy);
-		double betamix = (deposited.beta / deposited.energy);
+		double alphamix = 0;
+		double betamix = 0;
+
+		if(deposited.energy != 0) {
+			alphamix = (deposited.alpha / deposited.energy);
+			betamix = (deposited.beta / deposited.energy) * (deposited.beta / deposited.energy);
+		}
 
 		// Calculate biological dose and RBE
 		double biodose  = 0;
@@ -259,9 +264,14 @@ void GateBioDoseActor::UserSteppingActionInVoxel(const int index, const G4Step* 
 		// Calculation of EZ, alphaDep and betaDep (K = a*EZ+b*E)
 		auto const& interpol = (*itr2).second;
 
-		double ez = kineticEnergyPerNucleon * energyDep;
-		double alphaDep = interpol.alpha.a  * ez + interpol.alpha.b * energyDep;
-		double betaDep  = interpol.beta.a   * ez + interpol.beta.b  * energyDep;
+		double alpha = (interpol.alpha.a * kineticEnergyPerNucleon + interpol.alpha.b);
+		double beta = (interpol.beta.a * kineticEnergyPerNucleon + interpol.beta.b);
+		
+		if(alpha < 0) alpha = 0;
+		if(beta < 0) beta = 0;
+
+		double alphaDep = alpha * energyDep;
+		double betaDep  = std::sqrt(beta) * energyDep;
 
 		// Accumulate alpha/beta
 		deposited.alpha   += alphaDep;
