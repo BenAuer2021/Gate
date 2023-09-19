@@ -25,7 +25,7 @@ class GateBioDoseActor: public GateVImageActor
 public:
 	struct Deposited {
 		double alpha;
-		double beta;
+		double sqrtBeta;
 		double energy;
 		double dose;
 	};
@@ -36,7 +36,7 @@ public:
 
 	struct AlphaBetaCoefficients {
 		Coefficients alpha;
-		Coefficients beta;
+		Coefficients sqrtBeta;
 	};
 
 	using VoxelIndex = int;
@@ -132,6 +132,9 @@ private:
 	bool _enableAlphaMix;
 	bool _enableBetaMix;
 	bool _enableRBE;
+
+	int _eventCount = 0;
+	int _eventWithKnownIonCount = 0;
 };
 
 MAKE_AUTO_CREATOR_ACTOR(BioDoseActor, GateBioDoseActor)

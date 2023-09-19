@@ -117,11 +117,11 @@ void GateBioDoseActor::BuildDatabase() {
 			iss >> alpha >> beta;
 
 			auto alphaCoeff = Interpol(prevKineticEnergy, kineticEnergy, prevAlpha, alpha);
-			auto betaCoeff = Interpol(prevKineticEnergy, kineticEnergy, prevBeta, beta);
+			auto sqrtBetaCoeff = Interpol(prevKineticEnergy, kineticEnergy, std::sqrt(prevBeta), std::sqrt(beta));
 
 			// Saving the in the input databse
 			Fragment fragment{nZ, kineticEnergy};
-			_alphaBetaInterpolTable[fragment] = {alphaCoeff, betaCoeff};
+			_alphaBetaInterpolTable[fragment] = {alphaCoeff, sqrtBetaCoeff};
 
 			prevKineticEnergy = kineticEnergy;
 			prevAlpha = alpha;
@@ -145,6 +145,8 @@ GateBioDoseActor::Coefficients GateBioDoseActor::Interpol(double x1, double x2, 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 void GateBioDoseActor::SaveData() {
+	GateDebugMessageInc("Actor", 4, "GateBioDoseActor::SaveData() known ion events / total events: " << _eventWithKnownIonCount << " / " << _eventCount << "\n");
+
 	// Calculate Alpha Beta mix
 	for(auto const& [index, deposited]: _depositedMap) {
 		// Alpha Beta mix (final)
@@ -153,7 +155,7 @@ void GateBioDoseActor::SaveData() {
 
 		if(deposited.energy != 0) {
 			alphamix = (deposited.alpha / deposited.energy);
-			betamix = (deposited.beta / deposited.energy) * (deposited.beta / deposited.energy);
+			betamix = (deposited.sqrtBeta / deposited.energy) * (deposited.sqrtBeta / deposited.energy);
 		}
 
 		// Calculate biological dose and RBE
@@ -242,9 +244,13 @@ void GateBioDoseActor::UserSteppingActionInVoxel(const int index, const G4Step* 
 	G4int nZ = step->GetTrack()->GetDefinition()->GetAtomicNumber();
 	double kineticEnergyPerNucleon = (step->GetPreStepPoint()->GetKineticEnergy()) / (step->GetTrack()->GetDefinition()->GetAtomicMass()); //OK
 
+	++_eventCount;
+
 	// Accumulation of alpha/beta if ion type if known
 	// -> check if the ion type is known
 	if(_energyMaxForZ.count(nZ)) {
+		++_eventWithKnownIonCount;
+
 		//The max values in the database aren't being taking into account
 		//so for now it's coded like this to be sure the code takes them into account
 		double energyMax = _energyMaxForZ.at(nZ);
@@ -265,17 +271,17 @@ void GateBioDoseActor::UserSteppingActionInVoxel(const int index, const G4Step* 
 		auto const& interpol = (*itr2).second;
 
 		double alpha = (interpol.alpha.a * kineticEnergyPerNucleon + interpol.alpha.b);
-		double beta = (interpol.beta.a * kineticEnergyPerNucleon + interpol.beta.b);
+		double sqrtBeta = (interpol.sqrtBeta.a * kineticEnergyPerNucleon + interpol.sqrtBeta.b);
 		
 		if(alpha < 0) alpha = 0;
-		if(beta < 0) beta = 0;
+		if(sqrtBeta < 0) sqrtBeta = 0;
 
 		double alphaDep = alpha * energyDep;
-		double betaDep  = std::sqrt(beta) * energyDep;
+		double sqrtBetaDep  = sqrtBeta * energyDep;
 
 		// Accumulate alpha/beta
-		deposited.alpha   += alphaDep;
-		deposited.beta    += betaDep;
+		deposited.alpha     += alphaDep;
+		deposited.sqrtBeta  += sqrtBetaDep;
 	}
 }
 //-----------------------------------------------------------------------------
