@@ -28,6 +28,8 @@ public:
 		double sqrtBeta;
 		double energy;
 		double dose;
+
+		unsigned int n;
 	};
 
 	struct Coefficients {
@@ -41,6 +43,7 @@ public:
 
 	using VoxelIndex = int;
 	using DepositedMap = std::map<VoxelIndex, Deposited>;
+	using VoxelIndices = std::set<VoxelIndex>;
 
 	using Fragment = std::pair<int, double>;
 	using AlphaBetaInterpolTable = std::map<Fragment, AlphaBetaCoefficients>;
@@ -60,6 +63,7 @@ public:
 	void BeginOfRunAction(const G4Run* r) override;
 	void EndOfRunAction(const G4Run* r) override;
 	void BeginOfEventAction(const G4Event* event) override;
+	void EndOfEventAction(const G4Event* event) override;
 	void UserSteppingActionInVoxel(const int index, const G4Step* step) override;
 
 	// Do nothing but needed because pure virtual
@@ -87,6 +91,7 @@ public:
 	void SetEnableAlphaMix(bool e) { _enableAlphaMix = e; }
 	void SetEnableBetaMix(bool e) { _enableBetaMix = e; }
 	void SetEnableRBE(bool e) { _enableRBE = e; }
+	void SetEnableUncertainties(bool e) { _enableUncertainties = e; }
 
 	// Input database
 	void BuildDatabase();
@@ -117,6 +122,8 @@ private:
 	DepositedMap _depositedMap;
 	AlphaBetaInterpolTable _alphaBetaInterpolTable;
 
+	VoxelIndices _eventVoxelIndices;
+
 	// Images
 	GateImageWithStatistic _bioDoseImage;
 	GateImageWithStatistic _edepImage;
@@ -125,6 +132,14 @@ private:
 	GateImageWithStatistic _betaMixImage;
 	GateImageWithStatistic _RBEImage;
 
+	GateImageWithStatistic _biodoseUncertaintyImage;
+	GateImageWithStatistic _eventEdepImage;
+	GateImageWithStatistic _eventAlphaImage;
+	GateImageWithStatistic _squaredAlphaMixImage;
+	GateImageWithStatistic _eventSqrtBetaImage;
+	GateImageWithStatistic _squaredSqrtBetaMixImage;
+	GateImageWithStatistic _alphaMixSqrtBetaMixImage;
+
 	// Outputs
 	bool _enableEdep;
 	bool _enableDose;
@@ -132,6 +147,7 @@ private:
 	bool _enableAlphaMix;
 	bool _enableBetaMix;
 	bool _enableRBE;
+	bool _enableUncertainties;
 
 	int _eventCount = 0;
 	int _eventWithKnownIonCount = 0;

@@ -67,6 +67,10 @@ void GateBioDoseActorMessenger::BuildCommands(G4String base) {
 	n = base + "/enableRBE";
 	pEnableRBECmd = std::make_unique<G4UIcmdWithABool>(n, this);
 	pEnableRBECmd->SetGuidance("Enable RBE output");
+
+	n = base + "/enableUncertainty";
+	pEnableUncertaintyCmd = std::make_unique<G4UIcmdWithABool>(n, this);
+	pEnableUncertaintyCmd->SetGuidance("Enable uncertainty outputs");
 }
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -82,6 +86,7 @@ void GateBioDoseActorMessenger::SetNewValue(G4UIcommand* cmd, G4String value) {
 	else if(cmd == pEnableAlphaMixCmd.get())    pBioDoseActor->SetEnableAlphaMix(pEnableAlphaMixCmd->GetNewBoolValue(value));
 	else if(cmd == pEnableBetaMixCmd.get())     pBioDoseActor->SetEnableBetaMix(pEnableBetaMixCmd->GetNewBoolValue(value));
 	else if(cmd == pEnableRBECmd.get())         pBioDoseActor->SetEnableRBE(pEnableRBECmd->GetNewBoolValue(value));
+	else if(cmd == pEnableUncertaintyCmd.get()) pBioDoseActor->SetEnableUncertainties(pEnableUncertaintyCmd->GetNewBoolValue(value));
 
 	GateImageActorMessenger::SetNewValue(cmd, value);
 }

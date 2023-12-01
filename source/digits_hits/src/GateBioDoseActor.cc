@@ -22,11 +22,12 @@ GateBioDoseActor::GateBioDoseActor(G4String name, G4int depth):
 	_alphaRef(-1),
 	_betaRef(-1),
 	_enableEdep(false),
-	_enableDose(false),
+	_enableDose(true),
 	_enableBioDose(true),
 	_enableAlphaMix(false),
 	_enableBetaMix(false),
-	_enableRBE(false)
+	_enableRBE(false),
+	_enableUncertainties(true)
 {
 	GateDebugMessageInc("Actor", 4, "GateBioDoseActor() -- begin\n");
 }
@@ -46,6 +47,7 @@ void GateBioDoseActor::Construct() {
 	EnableBeginOfRunAction(true);
 	EnableEndOfRunAction(true);
 	EnableBeginOfEventAction(true);
+	EnableEndOfEventAction(true);
 	EnablePreUserTrackingAction(false);
 	EnablePostUserTrackingAction(false);
 	EnableUserSteppingAction(true);
@@ -55,13 +57,15 @@ void GateBioDoseActor::Construct() {
 		G4String basename = removeExtension(mSaveFilename);
 		G4String ext = getExtension(mSaveFilename);
 
-		auto setupImage = [&](GateImageWithStatistic& image, std::string const& suffix) {
-			G4String filename = basename + "_" + suffix + "." + ext;
-
+		auto setupImage = [&](GateImageWithStatistic& image, std::string const& suffix = "") {
 			SetOriginTransformAndFlagToImage(image);
 			image.SetResolutionAndHalfSize(mResolution, mHalfSize, mPosition);
 			image.Allocate();
-			image.SetFilename(filename);
+
+			if(!suffix.empty()) {
+				G4String filename = basename + "_" + suffix + "." + ext;
+				image.SetFilename(filename);
+			}
 		};
 
 		if(_enableEdep)     setupImage(_edepImage, "edep");
@@ -70,6 +74,19 @@ void GateBioDoseActor::Construct() {
 		if(_enableAlphaMix) setupImage(_alphaMixImage, "alphamix");
 		if(_enableBetaMix)  setupImage(_betaMixImage, "betamix");
 		if(_enableRBE)      setupImage(_RBEImage, "rbe");
+		if(_enableUncertainties) {
+			setupImage(_biodoseUncertaintyImage, "biodose_uncertainty");
+
+			setupImage(_eventEdepImage);
+
+			setupImage(_eventAlphaImage);
+			setupImage(_squaredAlphaMixImage);
+
+			setupImage(_eventSqrtBetaImage);
+			setupImage(_squaredSqrtBetaMixImage);
+
+			setupImage(_alphaMixSqrtBetaMixImage);
+		}
 	}
 
 	ResetData();
@@ -89,7 +106,7 @@ void GateBioDoseActor::Construct() {
 		GateError("BioDoseActor " << GetName() << ": setAlphaRef and setBetaRef must be done");
 }
 //-----------------------------------------------------------------------------
-//----------------------------------------------------------------------------- // ok bio dose
+//-----------------------------------------------------------------------------
 void GateBioDoseActor::BuildDatabase() {
 	std::ifstream f(_dataBase);
 	if(!f) GateError("BioDoseActor " << GetName() << ": unable to open file '" << _dataBase << "'");
@@ -147,64 +164,157 @@ GateBioDoseActor::Coefficients GateBioDoseActor::Interpol(double x1, double x2, 
 void GateBioDoseActor::SaveData() {
 	GateDebugMessageInc("Actor", 4, "GateBioDoseActor::SaveData() known ion events / total events: " << _eventWithKnownIonCount << " / " << _eventCount << "\n");
 
-	// Calculate Alpha Beta mix
+	auto const sqAlphaRef = _alphaRef * _alphaRef;
+
+	std::ofstream f{"output/uncinfo", std::ios_base::trunc};
+
 	for(auto const& [index, deposited]: _depositedMap) {
 		// Alpha Beta mix (final)
-		double alphamix = 0;
-		double betamix = 0;
+		double alphaMix = 0;
+		double sqrtBetaMix = 0;
+		double betaMix = 0;
 
 		if(deposited.energy != 0) {
-			alphamix = (deposited.alpha / deposited.energy);
-			betamix = (deposited.sqrtBeta / deposited.energy) * (deposited.sqrtBeta / deposited.energy);
+			alphaMix = (deposited.alpha / deposited.energy);
+			sqrtBetaMix = (deposited.sqrtBeta / deposited.energy);
+			betaMix = sqrtBetaMix * sqrtBetaMix;
 		}
 
 		// Calculate biological dose and RBE
 		double biodose  = 0;
 		double rbe      = 0;
 
-		if(deposited.dose > 0 && alphamix != 0 && betamix != 0) {
-			auto const sqAlphaRef = _alphaRef * _alphaRef;
-			auto const sqDose     = deposited.dose * deposited.dose;
-			biodose = (-_alphaRef + std::sqrt(sqAlphaRef + 4 * _betaRef * (alphamix * deposited.dose + betamix * sqDose))) / (2 * _betaRef);
+		auto const dose = deposited.dose;
+		auto const sqDose = deposited.dose * deposited.dose;
+		auto const sqrtDelta = std::sqrt(sqAlphaRef + 4 * _betaRef * (alphaMix * dose + betaMix * sqDose));
 
-			rbe = biodose / deposited.dose;
+		if(deposited.dose > 0 && alphaMix != 0 && betaMix != 0) {
+			biodose = (-_alphaRef + sqrtDelta) / (2 * _betaRef);
+			rbe = biodose / dose;
+		}
+
+		if(_enableUncertainties) {
+			if(deposited.dose > 0 && alphaMix != 0 && betaMix != 0 && sqrtDelta > 0 && _currentEvent > 0) {
+				double n = deposited.n;
+				n = _currentEvent;
+
+				double sumSquaredAlphaMix = _squaredAlphaMixImage.GetValue(index);
+				double sumSquaredSqrtBetaMix = _squaredSqrtBetaMixImage.GetValue(index);
+				double sumAlphaMixSqrtBetaMix = _alphaMixSqrtBetaMixImage.GetValue(index);
+
+				double pdBiodoseAlphaD = 1. / sqrtDelta;
+				double pdBiodoseSqrtBetaD = (2. * sqrtBetaMix * dose) / sqrtDelta;
+				double varAlphaMix = sumSquaredAlphaMix / n - alphaMix * alphaMix / (n*n);
+				double varSqrtBetaMix = sumSquaredSqrtBetaMix / n - sqrtBetaMix * sqrtBetaMix / (n*n);
+				double covAlphaMixSqrtBetaMix = sumAlphaMixSqrtBetaMix / n - (alphaMix * sqrtBetaMix) / (n*n);
+				double pdBiodoseAlphaMix = dose * pdBiodoseAlphaD;
+				double pdBiodoseSqrtBetaMix = dose * pdBiodoseSqrtBetaD;
+				double uncertaintyBiodose = std::sqrt(
+					pdBiodoseAlphaD * pdBiodoseAlphaD * varAlphaMix +
+					pdBiodoseSqrtBetaD * pdBiodoseSqrtBetaD * varSqrtBetaMix +
+					2. * covAlphaMixSqrtBetaMix * pdBiodoseAlphaMix * pdBiodoseSqrtBetaMix
+				);
+
+				_biodoseUncertaintyImage.SetValue(index, uncertaintyBiodose);
+
+				{ // TODO remove for release
+					f << "index: " << index << '\n';
+					f << "n: " << deposited.n << '\n';
+					f << "phydose: " << dose << '\n';
+					f << "biodose: " << biodose << '\n';
+					f << "alphaMix: " << alphaMix << '\n';
+					f << "sqrtBetaMix: " << sqrtBetaMix << '\n';
+					f << "sqrtDelta: " << sqrtDelta << '\n';
+					f << "var_a: " << varAlphaMix << '\n';
+					f << "var_b: " << varSqrtBetaMix << '\n';
+					f << "pd_a: " << pdBiodoseAlphaD << '\n';
+					f << "pd_b: " << pdBiodoseSqrtBetaD << '\n';
+					f << "cov: " << covAlphaMixSqrtBetaMix << '\n';
+					f << "alpha part:  " << pdBiodoseAlphaD * pdBiodoseAlphaD * varAlphaMix << '\n';
+					f << "beta part:   " << pdBiodoseSqrtBetaD * pdBiodoseSqrtBetaD * varSqrtBetaMix << '\n';
+					f << "cov part:    " << 2. * covAlphaMixSqrtBetaMix * pdBiodoseAlphaMix * pdBiodoseSqrtBetaMix << '\n';
+					f << "uncertainty: " << uncertaintyBiodose << '\n';
+					f << "---------------------\n";
+				}
+			} else {
+				_biodoseUncertaintyImage.SetValue(index, 1);
+			}
 		}
 
 		// Write data
 		if(_enableEdep)     _edepImage.SetValue(index, deposited.energy);
 		if(_enableDose)     _doseImage.SetValue(index, deposited.dose);
 		if(_enableBioDose)  _bioDoseImage.SetValue(index, biodose);
-		if(_enableAlphaMix) _alphaMixImage.SetValue(index, alphamix);
-		if(_enableBetaMix)  _betaMixImage.SetValue(index, betamix);
+		if(_enableAlphaMix) _alphaMixImage.SetValue(index, alphaMix);
+		if(_enableBetaMix)  _betaMixImage.SetValue(index, betaMix);
 		if(_enableRBE)      _RBEImage.SetValue(index, rbe);
 	}
-	//-------------------------------------------------------------
+
 	GateVActor::SaveData();
 
-	if(_enableEdep)     _edepImage.SaveData(_currentEvent);
-	if(_enableDose)     _doseImage.SaveData(_currentEvent);
-	if(_enableBioDose)  _bioDoseImage.SaveData(_currentEvent);
-	if(_enableAlphaMix) _alphaMixImage.SaveData(_currentEvent);
-	if(_enableBetaMix)  _betaMixImage.SaveData(_currentEvent);
-	if(_enableRBE)      _RBEImage.SaveData(_currentEvent);
+	if(_enableEdep)           _edepImage.SaveData(_currentEvent);
+	if(_enableDose)           _doseImage.SaveData(_currentEvent);
+	if(_enableBioDose)        _bioDoseImage.SaveData(_currentEvent);
+	if(_enableAlphaMix)       _alphaMixImage.SaveData(_currentEvent);
+	if(_enableBetaMix)        _betaMixImage.SaveData(_currentEvent);
+	if(_enableRBE)            _RBEImage.SaveData(_currentEvent);
+	if(_enableUncertainties)  _biodoseUncertaintyImage.SaveData(_currentEvent);
 }
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 void GateBioDoseActor::BeginOfRunAction(const G4Run* r) {
 	GateVActor::BeginOfRunAction(r);
 	GateDebugMessage("Actor", 3, "GateBioDoseActor -- Begin of Run\n");
+
+	if(_enableEdep)     _edepImage.Reset();
+	if(_enableDose)     _doseImage.Reset();
+	if(_enableBioDose)  _bioDoseImage.Reset();
+	if(_enableAlphaMix) _alphaMixImage.Reset();
+	if(_enableBetaMix)  _betaMixImage.Reset();
+	if(_enableRBE)      _RBEImage.Reset();
+	if(_enableUncertainties) {
+		_biodoseUncertaintyImage.Reset();
+		_eventEdepImage.Reset();
+		_eventAlphaImage.Reset();
+		_squaredAlphaMixImage.Reset();
+		_eventSqrtBetaImage.Reset();
+		_squaredSqrtBetaMixImage.Reset();
+		_alphaMixSqrtBetaMixImage.Reset();
+	}
 }
 //-----------------------------------------------------------------------------
-//----------------------------------------------------------------------------- // PAS DANS DOSE ACTOR
+//-----------------------------------------------------------------------------
 void GateBioDoseActor::EndOfRunAction(const G4Run* r) {
 	GateVActor::EndOfRunAction(r);
 }
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-// Callback at each event
 void GateBioDoseActor::BeginOfEventAction(const G4Event* e) {
 	GateVActor::BeginOfEventAction(e);
 	++_currentEvent;
+
+	_eventVoxelIndices.clear();
+
+	_eventEdepImage.Reset();
+	_eventAlphaImage.Reset();
+	_eventSqrtBetaImage.Reset();
+}
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+void GateBioDoseActor::EndOfEventAction(const G4Event* e) {
+	GateVActor::EndOfEventAction(e);
+
+	for(auto const& index: _eventVoxelIndices) {
+		auto const edep = _eventEdepImage.GetValue(index);
+		auto const alphaMix = _eventAlphaImage.GetValue(index) / edep;
+		auto const sqrtBetaMix = _eventSqrtBetaImage.GetValue(index) / edep;
+
+		_squaredAlphaMixImage.AddValue(index, alphaMix * alphaMix);
+		_squaredSqrtBetaMixImage.AddValue(index, sqrtBetaMix * sqrtBetaMix);
+		_alphaMixSqrtBetaMixImage.AddValue(index, alphaMix * sqrtBetaMix);
+
+		++_depositedMap[index].n; // TODO useless?
+	}
 }
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -217,7 +327,7 @@ void GateBioDoseActor::UserSteppingActionInVoxel(const int index, const G4Step* 
 
 	DepositedMap::iterator it = _depositedMap.find(index);
 	if(it == std::end(_depositedMap)) {
-		_depositedMap[index] = {0, 0, 0, 0};
+		_depositedMap[index] = {0, 0, 0, 0, 0};
 		it = _depositedMap.find(index);
 	}
 
@@ -272,16 +382,24 @@ void GateBioDoseActor::UserSteppingActionInVoxel(const int index, const G4Step* 
 
 		double alpha = (interpol.alpha.a * kineticEnergyPerNucleon + interpol.alpha.b);
 		double sqrtBeta = (interpol.sqrtBeta.a * kineticEnergyPerNucleon + interpol.sqrtBeta.b);
-		
+
 		if(alpha < 0) alpha = 0;
 		if(sqrtBeta < 0) sqrtBeta = 0;
 
 		double alphaDep = alpha * energyDep;
-		double sqrtBetaDep  = sqrtBeta * energyDep;
+		double sqrtBetaDep = sqrtBeta * energyDep;
 
 		// Accumulate alpha/beta
 		deposited.alpha     += alphaDep;
 		deposited.sqrtBeta  += sqrtBetaDep;
+
+		if(_enableUncertainties) {
+			_eventEdepImage.AddValue(index, energyDep);
+			_eventAlphaImage.AddValue(index, alphaDep);
+			_eventSqrtBetaImage.AddValue(index, sqrtBetaDep);
+		}
+
+		_eventVoxelIndices.insert(index);
 	}
 }
 //-----------------------------------------------------------------------------

@@ -43,6 +43,7 @@ protected:
 	std::unique_ptr<G4UIcmdWithABool>   pEnableAlphaMixCmd;
 	std::unique_ptr<G4UIcmdWithABool>   pEnableBetaMixCmd;
 	std::unique_ptr<G4UIcmdWithABool>   pEnableRBECmd;
+	std::unique_ptr<G4UIcmdWithABool>   pEnableUncertaintyCmd;
 };
 
 #endif
