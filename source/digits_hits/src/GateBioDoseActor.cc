@@ -8,7 +8,6 @@ See LICENSE.md for further details
 
 #include "G4EmParameters.hh"
 #include "GateBioDoseActor.hh"
-#include "GateImage.hh"
 #include "GateImageWithStatistic.hh"
 #include <CLHEP/Units/SystemOfUnits.h>
 
@@ -16,11 +15,12 @@ See LICENSE.md for further details
 
 //-----------------------------------------------------------------------------
 GateBioDoseActor::GateBioDoseActor(G4String name, G4int depth):
-	GateVImageActor(name, depth),
+	GateVImageActor(std::move(name), depth),
 	_currentEvent(0),
 	_messenger(this),
 	_alphaRef(-1),
 	_betaRef(-1),
+	_sobpWeight(0),
 	_enableEdep(false),
 	_enableDose(true),
 	_enableBioDose(true),
@@ -73,7 +73,7 @@ void GateBioDoseActor::Construct() {
 		if(_enableBioDose)  setupImage(_bioDoseImage, "biodose");
 		if(_enableAlphaMix) setupImage(_alphaMixImage, "alphamix");
 		if(_enableBetaMix)  setupImage(_betaMixImage, "betamix");
-		if(_enableRBE)      setupImage(_RBEImage, "rbe");
+		if(_enableRBE)      setupImage(_rbeImage, "rbe");
 		if(_enableUncertainties) {
 			setupImage(_biodoseUncertaintyImage, "biodose_uncertainty");
 
@@ -96,7 +96,7 @@ void GateBioDoseActor::Construct() {
 	G4cout << "Memory space to store physical dose into " << mResolution.x() * mResolution.y() * mResolution.z() << " voxels has been allocated " << G4endl;
 
 	// SOBP
-	if(_SOBPWeight == 0) { _SOBPWeight = 1; }
+	if(_sobpWeight == 0) { _sobpWeight = 1; }
 
 	//Building the cell line information
 	_dataBase = "data/" + _cellLine + "_" + _bioPhysicalModel + ".db";
@@ -112,7 +112,9 @@ void GateBioDoseActor::BuildDatabase() {
 	if(!f) GateError("BioDoseActor " << GetName() << ": unable to open file '" << _dataBase << "'");
 
 	int nZ = 0;
-	double prevKineticEnergy = 1, prevAlpha = 1, prevBeta =1;
+	double prevKineticEnergy = 1;
+	double prevAlpha = 1;
+	double prevBeta =1;
 
 	for(std::string line; std::getline(f, line); ) {
 		std::istringstream iss(line);
@@ -129,9 +131,12 @@ void GateBioDoseActor::BuildDatabase() {
 			prevAlpha = 1;
 			prevBeta = 1;
 		} else if(nZ != 0) {
-			double kineticEnergy, alpha, beta;
+			double kineticEnergy = 0;
+			double alpha = 0;
+			double beta = 0;
 			std::istringstream{firstCol} >> kineticEnergy;
-			iss >> alpha >> beta;
+			iss >> alpha;
+			iss >> beta;
 
 			auto alphaCoeff = Interpol(prevKineticEnergy, kineticEnergy, prevAlpha, alpha);
 			auto sqrtBetaCoeff = Interpol(prevKineticEnergy, kineticEnergy, std::sqrt(prevBeta), std::sqrt(beta));
@@ -247,7 +252,7 @@ void GateBioDoseActor::SaveData() {
 		if(_enableBioDose)  _bioDoseImage.SetValue(index, biodose);
 		if(_enableAlphaMix) _alphaMixImage.SetValue(index, alphaMix);
 		if(_enableBetaMix)  _betaMixImage.SetValue(index, betaMix);
-		if(_enableRBE)      _RBEImage.SetValue(index, rbe);
+		if(_enableRBE)      _rbeImage.SetValue(index, rbe);
 	}
 
 	GateVActor::SaveData();
@@ -257,7 +262,7 @@ void GateBioDoseActor::SaveData() {
 	if(_enableBioDose)        _bioDoseImage.SaveData(_currentEvent);
 	if(_enableAlphaMix)       _alphaMixImage.SaveData(_currentEvent);
 	if(_enableBetaMix)        _betaMixImage.SaveData(_currentEvent);
-	if(_enableRBE)            _RBEImage.SaveData(_currentEvent);
+	if(_enableRBE)            _rbeImage.SaveData(_currentEvent);
 	if(_enableUncertainties)  _biodoseUncertaintyImage.SaveData(_currentEvent);
 }
 //-----------------------------------------------------------------------------
@@ -271,7 +276,7 @@ void GateBioDoseActor::BeginOfRunAction(const G4Run* r) {
 	if(_enableBioDose)  _bioDoseImage.Reset();
 	if(_enableAlphaMix) _alphaMixImage.Reset();
 	if(_enableBetaMix)  _betaMixImage.Reset();
-	if(_enableRBE)      _RBEImage.Reset();
+	if(_enableRBE)      _rbeImage.Reset();
 	if(_enableUncertainties) {
 		_biodoseUncertaintyImage.Reset();
 		_eventEdepImage.Reset();
@@ -325,7 +330,7 @@ void GateBioDoseActor::UserSteppingActionInVoxel(const int index, const G4Step* 
 	if(energyDep == 0)  return;
 	if(index < 0)       return;
 
-	DepositedMap::iterator it = _depositedMap.find(index);
+	auto it = _depositedMap.find(index);
 	if(it == std::end(_depositedMap)) {
 		_depositedMap[index] = {0, 0, 0, 0, 0};
 		it = _depositedMap.find(index);
@@ -340,9 +345,9 @@ void GateBioDoseActor::UserSteppingActionInVoxel(const int index, const G4Step* 
 		decltype(_doseImage)* image = nullptr;
 		if(_enableDose)         image = &_doseImage;
 		else if(_enableBioDose) image = &_bioDoseImage;
-		else if(_enableRBE)     image = &_RBEImage;
+		else if(_enableRBE)     image = &_rbeImage;
 
-		auto currentMaterial = step->GetPreStepPoint()->GetMaterial();
+		auto* currentMaterial = step->GetPreStepPoint()->GetMaterial();
 		double density = currentMaterial->GetDensity();
 		double mass = image->GetVoxelVolume() * density;
 
@@ -358,7 +363,7 @@ void GateBioDoseActor::UserSteppingActionInVoxel(const int index, const G4Step* 
 
 	// Accumulation of alpha/beta if ion type if known
 	// -> check if the ion type is known
-	if(_energyMaxForZ.count(nZ)) {
+	if(_energyMaxForZ.count(nZ) != 0) {
 		++_eventWithKnownIonCount;
 
 		//The max values in the database aren't being taking into account
@@ -410,6 +415,6 @@ void GateBioDoseActor::ResetData() {
 	if(_enableBioDose)  _bioDoseImage.Reset();
 	if(_enableAlphaMix) _alphaMixImage.Reset();
 	if(_enableBetaMix)  _betaMixImage.Reset();
-	if(_enableRBE)      _RBEImage.Reset();
+	if(_enableRBE)      _rbeImage.Reset();
 }
 //-----------------------------------------------------------------------------

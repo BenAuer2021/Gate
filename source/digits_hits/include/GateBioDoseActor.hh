@@ -51,8 +51,6 @@ public:
 	using EnergyMaxForZ = std::map<int, double>;
 
 public:
-	~GateBioDoseActor() override = default;
-
 	FCT_FOR_AUTO_CREATOR_ACTOR(GateBioDoseActor)
 
 	//-----------------------------------------------------------------------------
@@ -81,9 +79,9 @@ public:
 	// Messenger
 	void SetAlphaRef(G4double alphaRef) { _alphaRef = alphaRef; }
 	void SetBetaRef(G4double betaRef) { _betaRef = betaRef; }
-	void SetCellLine(G4String s) { _cellLine = s; }
-	void SetBioPhysicalModel(G4String s) { _bioPhysicalModel = s; }
-	void SetSOBPWeight(G4double d) { _SOBPWeight = d; }
+	void SetCellLine(G4String s) { _cellLine = std::move(s); }
+	void SetBioPhysicalModel(G4String s) { _bioPhysicalModel = std::move(s); }
+	void SetSOBPWeight(G4double d) { _sobpWeight = d; }
 
 	void SetEnableEdep(bool e) { _enableEdep = e; }
 	void SetEnableDose(bool e) { _enableDose = e; }
@@ -116,7 +114,7 @@ private:
 	G4String _bioPhysicalModel;
 	double _alphaRef, _betaRef; //manual implanted
 
-	G4double _SOBPWeight;
+	G4double _sobpWeight;
 
 	// Maps
 	DepositedMap _depositedMap;
@@ -130,7 +128,7 @@ private:
 	GateImageWithStatistic _doseImage;
 	GateImageWithStatistic _alphaMixImage;
 	GateImageWithStatistic _betaMixImage;
-	GateImageWithStatistic _RBEImage;
+	GateImageWithStatistic _rbeImage;
 
 	GateImageWithStatistic _biodoseUncertaintyImage;
 	GateImageWithStatistic _eventEdepImage;
