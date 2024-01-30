@@ -1,13 +1,22 @@
 .. _tutoriels-label:
 
-Tutoriels
+Tutorials
 =========
 
+The tutorials have been developped and administrated by Dr Benjamin Auer, Clinical Nuclear Medicine Physicist at the Brigham and Women's Hospital (Contact: <bauer@bwh.harvard.edu>). Dr. Sophia Pells, Post-Doctoral Associate at the University of Massachusetts Chan Medical School, and Dr. Emilie Roncali, Associate Professor at the University of California Davis, are associate editors of the tutorials.
 
-We've created tutorials for GATE (SPECT and PET) and Castor (reconstruction) and made them available on GitHub. 
-Macros and step by step guidance can be accessed via the links below. 
-We also offer complimentary phantoms for quality control and realistic clinical studies. 
+Several tutorials were created for [GATE](http://www.opengatecollaboration.org) (SPECT and PET Imaging and Internal Dosimetry) and [CASToR](https://castor-project.org) (SPECT Reconstruction) and are available on GitHub. GATE and CASToR macros and step by step guidance can be accessed via the links below. We also offer a digital phantom library for quality control and realistic clinical studies. The digital phantoms described and distributed free-of-charge can be incorporated in GATE for emulating nuclear medicine acquisition. We provide a Defrise, Derenzo, and Jaszczak phantoms used in quality control procedures. Additionaly, we provide digital phantoms emulating clinical <sup>177</sup>Lu-DOTATATE, brain perfusion, dopamine transporter, and glioblastoma radiotracer distribution. 
+
+The open-source **mesh50_XCAT** phantom based on the 4D extended cardiac-torso digital anthropomorphic ([XCAT](https://otc.duke.edu/industry-investors/available-technologies/xcat/)) human phantom can be downloaded [here](https://github.com/BenAuer2021/Mesh-based-Human-Phantom-for-Simulation/edit/main/README.md). 
+
 Additionally, we provide a tutorial on GATE data analysis, along with sample codes.
+
+
+At the completion of this activity, the participant will be able to: 
+Build and run realistic simulation using open-source phantoms and software (GATE).
+Analyze the simulated data with open-source software (ROOT).
+Reconstruct the simulated data with open-source software (CASTOR).
+Download and Use the benchmark examples emulating clinical acquisition.
 
 
 - Presentation of the tutorial content  https://github.com/BenAuer2021/SNMMI_2023_Session
